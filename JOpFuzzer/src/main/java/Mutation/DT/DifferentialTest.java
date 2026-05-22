@@ -1,5 +1,6 @@
 package Mutation.DT;
 
+import Options.HeuristicOptionSelector;
 import Options.Option;
 import Preprocess.ProfileData;
 import Preprocess.SourceCodeFeature;
@@ -39,9 +40,15 @@ public class DifferentialTest {
     int selectOptionNumber = 3;// number of options to be selected
 
     public DifferentialTest(String jdkPath, File test, List<String> originOptions, List<String> changedStructure) throws IOException, ExecutionException, InterruptedException {
+        this(jdkPath, test, originOptions, changedStructure, false);
+    }
+
+    public DifferentialTest(String jdkPath, File test, List<String> originOptions, List<String> changedStructure, boolean useHeuristics) throws IOException, ExecutionException, InterruptedException {
         this.jdkPath = jdkPath;
         this.test = test;
-        readArray();
+        if (!useHeuristics) {
+            readArray();
+        }
         String cmdResult = "timeout 30s " + jdkPath + "/bin/java -Xbatch -XX:+IgnoreUnrecognizedVMOptions -cp " + test.getAbsolutePath() + " Test " + " > " + test.getCanonicalPath() + "/result.log";
         int exitValueResult = execute(cmdResult);
         if (exitValueResult != 0) {
@@ -52,7 +59,11 @@ public class DifferentialTest {
                 randomSelectOption();
                 executeOption(new ArrayList<>());
             } else {
-                options = analyzeChangedStructure(changedStructure);
+                if (useHeuristics) {
+                    options = HeuristicOptionSelector.selectOptions(changedStructure);
+                } else {
+                    options = analyzeChangedStructure(changedStructure);
+                }
                 if (options == null)
                     return;
                 executeOption(originOptions);
@@ -79,8 +90,8 @@ public class DifferentialTest {
         for (Map.Entry<String, String> p : optionProfiles.entrySet()) {
             profile = " -XX:+" + p.getValue() + " ";
             option = getOptionNon_defaultValue(p.getKey());
-            cmd = jdkPath + "/bin/java -cp -Xbatch -XX:+IgnoreUnrecognizedVMOptions -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions " + test.getCanonicalPath() + " " + profile + " Test " + " > " + test.getCanonicalPath() + "/default.log";
-            String cmdProfile = jdkPath + "/bin/java -cp -Xbatch -XX:+IgnoreUnrecognizedVMOptions -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions " + test.getCanonicalPath() + " " + profile + " " + option + " Test " + " > " + test.getCanonicalPath() + "/profile.log";
+            cmd = jdkPath + "/bin/java -Xbatch -XX:+IgnoreUnrecognizedVMOptions -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -cp " + test.getCanonicalPath() + " " + profile + " Test " + " > " + test.getCanonicalPath() + "/default.log";
+            String cmdProfile = jdkPath + "/bin/java -Xbatch -XX:+IgnoreUnrecognizedVMOptions -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -cp " + test.getCanonicalPath() + " " + profile + " " + option + " Test " + " > " + test.getCanonicalPath() + "/profile.log";
             int exitValue = execute(cmd);
             int exitValueProfile = execute(cmdProfile);
             if (exitValue != 0 || exitValueProfile != 0) {
@@ -95,7 +106,7 @@ public class DifferentialTest {
         List<Map.Entry<String, Double>> optionSimilarityList = new ArrayList<>(optionSimilarity.entrySet());
         optionSimilarityList.sort((o1, o2) -> o2.getValue().compareTo(o1.getValue()));
 
-        if (Double.parseDouble(optionSimilarityList.get(0).getKey()) > threshold && Double.parseDouble(optionSimilarityList.get(1).getKey()) > threshold && Double.parseDouble(optionSimilarityList.get(2).getKey()) > threshold) {
+        if (optionSimilarityList.get(0).getValue() > threshold && optionSimilarityList.get(1).getValue() > threshold && optionSimilarityList.get(2).getValue() > threshold) {
             isWorthToSave = false;
             return;
         }
@@ -168,7 +179,7 @@ public class DifferentialTest {
         int testNumber = (int) Math.pow(2, optionSet.size());
         ExecutorService threadPool = Executors.newFixedThreadPool(testNumber);
         for (int i = 0; i < testNumber; i++) {
-            cmd = "timeout 30s " + jdkPath + "/bin/java -cp -Xbatch -XX:+IgnoreUnrecognizedVMOptions -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions " + test.getCanonicalPath() + " " + solveStringSet(optionSet, i) + " Test > " + test.getCanonicalPath() + "/" + i + ".log";
+            cmd = "timeout 30s " + jdkPath + "/bin/java -Xbatch -XX:+IgnoreUnrecognizedVMOptions -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -cp " + test.getCanonicalPath() + " " + solveStringSet(optionSet, i) + " Test > " + test.getCanonicalPath() + "/" + i + ".log";
             Future<Integer> result = threadPool.submit(new Task(cmd));
             if (result.get() != 0) {
                 System.err.println("Option Error:" + cmd + " failed");
@@ -263,13 +274,20 @@ public class DifferentialTest {
             CSVReader csvReader = new CSVReader(reader);
             String[] nextLine;
             int index = 0;
+            float sum = 0;
+            int count = 0;
             while ((nextLine = csvReader.readNext()) != null) {
                 for (int i = 0; i < nextLine.length; i++) {
                     StructureOptionRelation[index][i] = Float.parseFloat(nextLine[i]);
-                    threshold += StructureOptionRelation[index][i];
+                    if (!Float.isNaN(StructureOptionRelation[index][i])) {
+                        sum += StructureOptionRelation[index][i];
+                        count++;
+                    }
                 }
                 index++;
-                threshold = threshold / (index * nextLine.length);
+            }
+            if (count > 0) {
+                threshold = sum / count;
             }
         } catch (CsvValidationException | IOException e) {
             throw new RuntimeException(e);

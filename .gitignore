@@ -1,3 +1,8 @@
+JOpFuzzer/JavaFuzzer/tests/
+JOpFuzzer/compiler/
+JOpFuzzer/target/
+JOpFuzzer/Bug/
+
 # Created by https://www.toptal.com/developers/gitignore/api/macos,java,powershell
 # Edit at https://www.toptal.com/developers/gitignore?templates=macos,java,powershell
 

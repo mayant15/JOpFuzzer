@@ -25,7 +25,14 @@ import static Utils.Execute.execute;
 public class MutationEntry {
     String separator = System.getProperty("file.separator");
 
+    boolean useHeuristics;
+
     public MutationEntry(String jdkPath, SeedPool seedPool, String mr) throws IOException, ExecutionException, InterruptedException {
+        this(jdkPath, seedPool, mr, false);
+    }
+
+    public MutationEntry(String jdkPath, SeedPool seedPool, String mr, boolean useHeuristics) throws IOException, ExecutionException, InterruptedException {
+        this.useHeuristics = useHeuristics;
         int mutationRound = Integer.parseInt(mr);//the mutation time
         String projectPath = "./JavaFuzzer/tests/"; // source code root path. e.g. /home/kui/Desktop/buggyProject
         int lineNumber; // line number of target file to be mutated. e.g. 10
@@ -39,7 +46,7 @@ public class MutationEntry {
             File dir = seeds.get(seedIndex);
             lineNumber = analyzeFile(dir);
             int testNumber = seedPool.getTestNumber();
-            String sIndex = String.format("%0" + format + "d", seedIndex);
+            String sIndex = dir.getName();
             String tIndex = String.format("%0" + format + "d", testNumber + 1);
             String mutate = jdkPath + "/bin/java -jar JavaMutator.jar " + projectPath + " " + sIndex + " " + tIndex + " " + lineNumber + " " + jdkPath;
             while (true) {
@@ -53,7 +60,7 @@ public class MutationEntry {
             String targetPath = projectPath + tIndex;
             List<String> changedStructure = new ArrayList<>(new HashSet<>(getChangedStructure(originPath, targetPath)));
             File mutatedFile = new File(targetPath);
-            DifferentialTest differentialTest = new DifferentialTest(jdkPath, mutatedFile, seedPool.seedPoolOptionPair.get(dir), changedStructure);
+            DifferentialTest differentialTest = new DifferentialTest(jdkPath, mutatedFile, seedPool.seedPoolOptionPair.get(dir), changedStructure, useHeuristics);
             if (!differentialTest.getRunnable()) {
                 FileUtils.deleteDirectory(mutatedFile);
                 continue;
@@ -64,7 +71,7 @@ public class MutationEntry {
             }
             if (!differentialTest.getSafe()) {
                 Files.createDirectories(Paths.get("Bug"));
-                FileUtils.moveDirectory(dir, new File("Bug" + separator));
+                FileUtils.moveDirectory(mutatedFile, new File("Bug" + separator + mutatedFile.getName()));
             }
             seedPool.addTestNumber();
         }
